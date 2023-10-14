@@ -1,0 +1,159 @@
+#!/bin/bash
+
+clear
+echo "#  SLIM-TWEAK,  by William Rueger (furryfixer)
+     under GPL 3.0 license.
+ 
+  Designed for SLiM 1.3.6 Display Manager. Currently also works
+  with SLlM-fork/ SLiM 1.4 versions. Slim-tweak sets the system-wide
+  default desktop session used by SLiM. Mostly useful if multiple
+  Desktop Environments or Window Managers are available in
+  /usr/share/xsessions. This script sorts .desktop entries and
+  reorders them so that the default chosen by the user is the
+  first(default) entry listed by SLiM when %sessiondir is set to read
+  the xsessions directory. Custom slim.conf and Xsession files are used,
+  and ~/.xinitrc IS IGNORED in favor of the custom Xsession. ~/.profile
+  and ~/.bash_profile are still sourced.
+
+Do you wish to continue (y/n)?"
+read yn 
+[[ $yn != [Yy] ]] && exit 0
+
+# Untested but maybe adaptable to Gentoo, etc., by changing $SESSIONDIR 
+SESSIONDIR=/usr/share/xsessions
+SESSNDIR_SORTED=/usr/share/slim/xsessions-sorted
+
+if [ "$EUID" -ne 0 ]; then
+	echo "You must be ROOT for this app to work"
+	exit 1
+fi
+if [ ! -f /usr/bin/loginctl ]; then
+	echo "slim-tweak may not work properly without logind or elogind.
+	Do you still wish to try (y/n)?"
+	read yn 
+	[[ $yn != [Yy] ]] && exit 0
+fi
+if [ ! -f /usr/bin/slim ]; then
+	echo "SLiM executable not found.
+	You must first install SLiM before running slim-tweak."
+	exit 1
+fi
+if [ ! -d $SESSIONDIR ] || [ ! -f /etc/slim.conf ]; then
+	echo "Required directories or conf files not in standard locations.
+	Unable to continue"
+	exit 1
+fi
+if [[ -d "$SESSNDIR_SORTED" ]]; then
+	rm -R $SESSNDIR_SORTED/*
+else
+	mkdir -p $SESSNDIR_SORTED
+fi
+ls $SESSIONDIR/ > /tmp/xsessnlist
+echo "If new entries are added to $SESSIONDIR, slim-tweak must be run again.
+List of installed xsession entries:
+"
+[ -f /tmp/xlist-parsed ] && rm /tmp/xlist-parsed
+while read f; do
+	if [[ $f = *".desktop" ]] || [ -x "$SESSIONDIR/$f" ]; then
+		echo $f >> /tmp/xlist-parsed 
+	else  # filter out non-executables
+		echo \"$f\"" is not executable, and ignored.
+"
+	fi 		
+done </tmp/xsessnlist
+i=1
+while read f; do
+	touch $SESSNDIR_SORTED/$i.desktop
+	echo "   ($i) "$f
+	((i++)) 
+done </tmp/xlist-parsed
+echo "
+Enter the NUMBER of the session desired to be the SLiM default,
+followed by the <ENTER> key:"
+read NUM
+if [[ $NUM =~ [^0-9] ]]; then # Not a number 
+	echo $NUM" is not a proper number.
+	Unable to continue."
+	exit 1
+fi
+wm_default=$(sed "${NUM}q;d" /tmp/xlist-parsed)
+echo $wm_default" will be first listed (default) xsession."
+## ls -U presumably orders the entries just as SliM will
+first_sessn=$(ls -U 2>&1 $SESSNDIR_SORTED | head -n 1)
+if [[ ! $wm_default = *".desktop" ]]; then  # Create .desktop if not already
+	echo "[Desktop Entry]
+Type=Application
+Name=$wm_default      (F1 key to change)
+Exec=$SESSIONDIR/$wm_default" > $SESSNDIR_SORTED/$first_sessn
+else
+	cat $SESSIONDIR/$wm_default > $SESSNDIR_SORTED/$first_sessn
+fi
+j=1
+while read f; do
+	if [[ $j.desktop = $first_sessn ]]; then
+		((j++))
+	fi
+	if [[ $f != $wm_default ]]; then
+		if [[ ! $f = *".desktop" ]]; then  # Create .desktop if not already
+			echo "[Desktop Entry]
+Type=Application
+Name=$f      (F1 key to change)
+Exec=$SESSIONDIR/$f" > $SESSNDIR_SORTED/$j.desktop
+		else
+			cat $SESSIONDIR/$f > $SESSNDIR_SORTED/$j.desktop
+			sed -i '/^Name=/ s/$/      (F1 key to change)/' $SESSNDIR_SORTED/$j.desktop
+
+		fi
+		((j++))
+	fi
+done </tmp/xlist-parsed
+[ ! -f /etc/slim.conf.original ] && mv /etc/slim.conf /etc/slim.conf.original
+echo '# Custom slim.conf created by slim-tweak.
+# Original file is stored as /etc/slim.conf.original
+#' > /etc/slim.conf 
+cat /etc/slim.conf.original | cut -d'#' -f 1 | tr -s '\n' | grep -vE 'login_cmd|sessiondir' >> /etc/slim.conf
+echo "sessiondir          $SESSNDIR_SORTED/
+login_cmd   exec /bin/bash -login /usr/share/slim/Xsession %session" >> /etc/slim.conf
+
+default_exec=$(grep -m 1 "Exec=" $SESSNDIR_SORTED/$first_sessn | cut -d'=' -f 2)
+echo '#! /bin/sh
+### Custom Xsession used by slim-tweak
+
+userresources=$HOME/.Xresources
+usermodmap=$HOME/.Xmodmap
+sysresources=/etc/X11/xinit/.Xresources
+sysmodmap=/etc/X11/xinit/.Xmodmap
+# merge in defaults and keymaps
+if [ -f $sysresources ]; then
+    xrdb -merge $sysresources
+fi
+if [ -f $sysmodmap ]; then
+    xmodmap $sysmodmap
+fi
+if [ -f "$userresources" ]; then
+    xrdb -merge "$userresources"
+fi
+if [ -f "$usermodmap" ]; then
+    xmodmap "$usermodmap"
+fi
+# start some nice programs
+if [ -d /etc/X11/xinit/xinitrc.d ] ; then
+ for f in /etc/X11/xinit/xinitrc.d/?* ; do
+  [ -x "$f" ] && . "$f"
+ done
+ unset f
+fi
+[ -f /etc/environment ] && . /etc/environment
+[ -f /etc/profile ] && . /etc/profile
+[ -f ~/.profile ] && . ~/.profile
+[ -f ~/.bash_profile ] && . ~/.bash_profile
+xsetroot -cursor_name left_ptr
+[ -z "$1" ] && set -- "'${default_exec}'"
+$@
+FILES=$(ls -A /run/media/$USER/)
+for f in $FILES; do umount /run/media/$USER/$f; done
+loginctl terminate-session $XDG_SESSION_ID' > /usr/share/slim/Xsession
+
+echo "
+slim-tweak was succesfully run.
+You may need to restart the slim service or reboot to enable changes"
