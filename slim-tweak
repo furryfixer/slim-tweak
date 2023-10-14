@@ -3,7 +3,6 @@
 clear
 echo "#  SLIM-TWEAK,  by William Rueger (furryfixer)
      under GPL 3.0 license.
- 
   Designed for SLiM 1.3.6 Display Manager. Currently also works
   with SLlM-fork/ SLiM 1.4 versions. Slim-tweak sets the system-wide
   default desktop session used by SLiM. Mostly useful if multiple
@@ -102,7 +101,6 @@ Exec=$SESSIONDIR/$f" > $SESSNDIR_SORTED/$j.desktop
 		else
 			cat $SESSIONDIR/$f > $SESSNDIR_SORTED/$j.desktop
 			sed -i '/^Name=/ s/$/      (F1 key to change)/' $SESSNDIR_SORTED/$j.desktop
-
 		fi
 		((j++))
 	fi
@@ -155,5 +153,5 @@ for f in $FILES; do umount /run/media/$USER/$f; done
 loginctl terminate-session $XDG_SESSION_ID' > /usr/share/slim/Xsession
 
 echo "
-slim-tweak was succesfully run.
+slim-tweak was successfully run.
 You may need to restart the slim service or reboot to enable changes"
