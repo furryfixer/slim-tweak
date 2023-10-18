@@ -150,8 +150,8 @@ xsetroot -cursor_name left_ptr
 $@
 FILES=$(ls -A /run/media/$USER/)
 for f in $FILES; do umount /run/media/$USER/$f; done
-loginctl terminate-session $XDG_SESSION_ID' > /usr/share/slim/Xsession
-
+[ -x /bin/loginctl ] && loginctl terminate-session $XDG_SESSION_ID' > /usr/share/slim/Xsession
+chmod +x /usr/share/slim/Xsession
 echo "
 slim-tweak was successfully run.
 You may need to restart the slim service or reboot to enable changes"
