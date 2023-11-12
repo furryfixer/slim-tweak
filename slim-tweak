@@ -86,6 +86,7 @@ Name=$wm_default      (F1 key to change)
 Exec=$SESSIONDIR/$wm_default" > $SESSNDIR_SORTED/$first_sessn
 else
 	cat $SESSIONDIR/$wm_default > $SESSNDIR_SORTED/$first_sessn
+	sed -i '/^Name=/ s/$/      (F1 key to change)/' $SESSNDIR_SORTED/$first_sessn
 fi
 j=1
 while read f; do
