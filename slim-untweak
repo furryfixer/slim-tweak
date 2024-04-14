@@ -1,0 +1,48 @@
+#!/bin/bash
+clear
+##########################################################################
+# SLIM-UNTWEAK, by William Rueger (furryfixer)
+# Script to undo changes made by slim-tweak
+# You must run with sudo or as ROOT!
+##########################################################################
+
+# user must be root
+if [ "$(id -u)" != "0" ]; then
+   echo "This script must be run as root" 1>&2
+   exit 1
+fi
+echo "
+slim-untweak will undo changes made by slim-tweak. Any other /etc/slim.conf
+or theme changes made outside of and after slim-tweak run will also be
+undone. Do you wish to continue?
+
+Press [Y/N] and <ENTER>."
+read yn
+[[ $yn != [Yy] ]] && exit 1
+echo "
+Untweaking and restoring original SLiM configuration...
+"
+if [[ ! -f /etc/slim.conf.original ]]; then
+	echo "
+Original slim.conf file is missing. Unable to restore. Reinstall
+slim package if necessary. Exiting.
+"
+	exit 1
+fi
+[[ -f /etc/slim.conf ]] && rm /etc/slim.conf
+mv /etc/slim.conf.original /etc/slim.conf
+if [[ -d /usr/share/slim/themes.pretweak ]]; then
+	if [ ! -z "$(ls -A /usr/share/slim/themes.pretweak)" ]; then
+		for themedir in /usr/share/slim/themes.pretweak/*/; do
+			theme_name="$(basename -- $themedir)"
+				[[ -d "/usr/share/slim/themes/$theme_name" ]] && rm -R "/usr/share/slim/themes/$theme_name"
+				cp -R $themedir /usr/share/slim/themes/
+		done
+	fi
+	rm -R /usr/share/slim/themes.pretweak
+fi
+[[ -d /usr/share/slim/xsessions-sorted ]] && rm -R /usr/share/slim/xsessions-sorted
+[[ -f /usr/share/slim/Xsession ]] && rm -R /usr/share/slim/Xsession
+echo "
+slim-tweak changes successfully reversed.
+"
