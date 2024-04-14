@@ -1,18 +1,23 @@
 #!/bin/bash
 
 clear
-echo "#  SLIM-TWEAK,  by William Rueger (furryfixer)
+echo "SLIM-TWEAK,  by William Rueger (furryfixer)
      under GPL 3.0 license.
-  Designed for SLiM 1.3.6 Display Manager. Currently also works
-  with SLlM-fork/ SLiM 1.4 versions. Slim-tweak sets the system-wide
-  default desktop session used by SLiM. Mostly useful if multiple
-  Desktop Environments or Window Managers are available in
-  /usr/share/xsessions. This script sorts .desktop entries and
-  reorders them so that the default chosen by the user is the
-  first(default) entry listed by SLiM when %sessiondir is set to read
-  the xsessions directory. Custom slim.conf and Xsession files are used,
-  and ~/.xinitrc IS IGNORED in favor of the custom Xsession. ~/.profile
-  and ~/.bash_profile are still sourced.
+  Slim-tweak sets the default desktop session started by 
+  the SLiM Display Manager (1.36 or slim-fork/1.4) without
+  forcing modification of individual user's  ~/.xintrc files.
+  Mostly useful if multiple Desktop Environments or 
+  Window Managers are available in /usr/share/xsessions.
+
+  IMPORTANT! ~/.xinitrc IS IGNORED BY SLIM after slim-tweak
+  unless selected for default, or by F1 during login.
+
+  There is no modifcation of the SLiM code. Allows SLiM 1.36
+  users to invoke executable scripts in xsessions directory
+  like later SLiM versions. A custom Xsession, slim.conf,
+  and separate xsessions directory are created. Theme files
+  for SLiM-fork or SLiM 1.4+ are modified to always display
+  the default session.
 
 Do you wish to continue (y/n)?"
 read yn 
@@ -42,30 +47,45 @@ if [ ! -d $SESSIONDIR ] || [ ! -f /etc/slim.conf ]; then
 	Unable to continue"
 	exit 1
 fi
-if [[ -d "$SESSNDIR_SORTED" ]]; then
-	rm -R $SESSNDIR_SORTED/*
-else
-	mkdir -p $SESSNDIR_SORTED
-fi
-ls $SESSIONDIR/ > /tmp/xsessnlist
-echo "If new entries are added to $SESSIONDIR, slim-tweak must be run again.
-List of installed xsession entries:
-"
-[ -f /tmp/xlist-parsed ] && rm /tmp/xlist-parsed
-while read f; do
-	if [[ $f = *".desktop" ]] || [ -x "$SESSIONDIR/$f" ]; then
-		echo $f >> /tmp/xlist-parsed 
+[[ -d "/tmp/xsessions-parsed" ]] && rm -R /tmp/xsessions-parsed
+mkdir -p /tmp/xsessions-parsed
+
+for fpath in $SESSIONDIR/*; do
+	f="$(basename -- $fpath)"
+	if [[ $f = *".desktop" ]]; then
+		cp $fpath /tmp/xsessions-parsed/ 
+	elif [ -x "$fpath" ]; then
+		# Create .desktop if not already
+		echo "[Desktop Entry]
+Type=Application
+Name=$f
+Exec=$fpath" > /tmp/xsessions-parsed/$f.desktop
 	else  # filter out non-executables
 		echo \"$f\"" is not executable, and ignored.
 "
-	fi 		
-done </tmp/xsessnlist
+	fi
+done
+#Create session option for ~/.xinitrc
+echo "[Desktop Entry]
+Type=Application
+Name=~/.xinitrc
+Exec=~/.xinitrc" > /tmp/xsessions-parsed/user.xinitrc.desktop
+if [[ -d "$SESSNDIR_SORTED" ]]; then
+	rm -R $SESSNDIR_SORTED/* 2>/dev/null
+else
+	mkdir -p $SESSNDIR_SORTED
+fi
+echo "If new entries are added to $SESSIONDIR, slim-tweak must be run again.
+It should also be run again if new themes are installed.
+List of installed xsession entries:
+"
 i=1
-while read f; do
+for f in /tmp/xsessions-parsed/*; do
+	sessn_name=$(grep "Name=" $f | cut -d = -f 2)
 	touch $SESSNDIR_SORTED/$i.desktop
-	echo "   ($i) "$f
+	echo "   ($i) "$sessn_name
 	((i++)) 
-done </tmp/xlist-parsed
+done
 echo "
 Enter the NUMBER of the session desired to be the SLiM default,
 followed by the <ENTER> key:"
@@ -75,38 +95,35 @@ if [[ $NUM =~ [^0-9] ]]; then # Not a number
 	Unable to continue."
 	exit 1
 fi
-wm_default=$(sed "${NUM}q;d" /tmp/xlist-parsed)
-echo $wm_default" will be first listed (default) xsession."
+if [[ $NUM -eq 0 || $NUM -ge $i ]]; then # out of range
+	echo $NUM" is out of range.
+	Unable to continue."
+	exit 1
+fi
+wm_default=$(ls /tmp/xsessions-parsed | sed -n "${NUM}p")
+default_name=$(grep -m 1 "Name=" /tmp/xsessions-parsed/$wm_default | cut -d'=' -f 2)
+default_exec=$(grep -m 1 "Exec=" /tmp/xsessions-parsed/$wm_default | cut -d'=' -f 2)
 ## ls -U presumably orders the entries just as SliM will
 first_sessn=$(ls -U 2>&1 $SESSNDIR_SORTED | head -n 1)
-if [[ ! $wm_default = *".desktop" ]]; then  # Create .desktop if not already
-	echo "[Desktop Entry]
-Type=Application
-Name=$wm_default      (F1 key to change)
-Exec=$SESSIONDIR/$wm_default" > $SESSNDIR_SORTED/$first_sessn
-else
-	cat $SESSIONDIR/$wm_default > $SESSNDIR_SORTED/$first_sessn
-	sed -i '/^Name=/ s/$/      (F1 key to change)/' $SESSNDIR_SORTED/$first_sessn
-fi
+cat /tmp/xsessions-parsed/$wm_default > $SESSNDIR_SORTED/$first_sessn
 j=1
-while read f; do
+for fpath in /tmp/xsessions-parsed/*; do
+	f="$(basename -- $fpath)"
 	if [[ $j.desktop = $first_sessn ]]; then
 		((j++))
 	fi
 	if [[ $f != $wm_default ]]; then
-		if [[ ! $f = *".desktop" ]]; then  # Create .desktop if not already
-			echo "[Desktop Entry]
-Type=Application
-Name=$f      (F1 key to change)
-Exec=$SESSIONDIR/$f" > $SESSNDIR_SORTED/$j.desktop
-		else
-			cat $SESSIONDIR/$f > $SESSNDIR_SORTED/$j.desktop
-			sed -i '/^Name=/ s/$/      (F1 key to change)/' $SESSNDIR_SORTED/$j.desktop
-		fi
+		cat $fpath > $SESSNDIR_SORTED/$j.desktop
 		((j++))
 	fi
-done </tmp/xlist-parsed
-[ ! -f /etc/slim.conf.original ] && mv /etc/slim.conf /etc/slim.conf.original
+done
+for f in "$SESSNDIR_SORTED"/*.desktop; do # Add F1 message
+	sed -i 's/ (F1 to change)//' $f
+	sed -i "/^Name=/ s/$/  (F1 to change)/" $f
+done
+if [ ! -f /etc/slim.conf.original ]; then
+	mv /etc/slim.conf /etc/slim.conf.original
+fi
 echo '# Custom slim.conf created by slim-tweak.
 # Original file is stored as /etc/slim.conf.original
 #' > /etc/slim.conf 
@@ -114,45 +131,103 @@ cat /etc/slim.conf.original | cut -d'#' -f 1 | tr -s '\n' | grep -vE 'login_cmd|
 echo "sessiondir          $SESSNDIR_SORTED/
 login_cmd   exec /bin/bash -login /usr/share/slim/Xsession %session" >> /etc/slim.conf
 
-default_exec=$(grep -m 1 "Exec=" $SESSNDIR_SORTED/$first_sessn | cut -d'=' -f 2)
 echo '#! /bin/sh
 ### Custom Xsession used by slim-tweak
 
-userresources=$HOME/.Xresources
-usermodmap=$HOME/.Xmodmap
-sysresources=/etc/X11/xinit/.Xresources
-sysmodmap=/etc/X11/xinit/.Xmodmap
-# merge in defaults and keymaps
-if [ -f $sysresources ]; then
-    xrdb -merge $sysresources
+[ -z "$1" ] && set -- '${default_exec}'
+if [ "$1" == "$HOME/.xinitrc" ]; then
+	[ -f $HOME/.xinitrc ] && . $HOME/.xinitrc
+else
+	userresources=$HOME/.Xresources
+	usermodmap=$HOME/.Xmodmap
+	sysresources=/etc/X11/xinit/.Xresources
+	sysmodmap=/etc/X11/xinit/.Xmodmap
+	# merge in defaults and keymaps
+	if [ -f $sysresources ]; then
+		xrdb -merge $sysresources
+	fi
+	if [ -f $sysmodmap ]; then
+		xmodmap $sysmodmap
+	fi
+	if [ -f "$userresources" ]; then
+		xrdb -merge "$userresources"
+	fi
+	if [ -f "$usermodmap" ]; then
+		xmodmap "$usermodmap"
+	fi
+	# start some nice programs
+	if [ -d /etc/X11/xinit/xinitrc.d ] ; then
+		for f in /etc/X11/xinit/xinitrc.d/?* ; do
+			[ -x "$f" ] && . "$f"
+		done
+		unset f
+	fi
+	[ -f /etc/environment ] && . /etc/environment
+	[ -f /etc/profile ] && . /etc/profile
+	[ -f ~/.profile ] && . ~/.profile
+	[ -f ~/.bash_profile ] && . ~/.bash_profile
+	xsetroot -cursor_name left_ptr
+	$@
 fi
-if [ -f $sysmodmap ]; then
-    xmodmap $sysmodmap
-fi
-if [ -f "$userresources" ]; then
-    xrdb -merge "$userresources"
-fi
-if [ -f "$usermodmap" ]; then
-    xmodmap "$usermodmap"
-fi
-# start some nice programs
-if [ -d /etc/X11/xinit/xinitrc.d ] ; then
- for f in /etc/X11/xinit/xinitrc.d/?* ; do
-  [ -x "$f" ] && . "$f"
- done
- unset f
-fi
-[ -f /etc/environment ] && . /etc/environment
-[ -f /etc/profile ] && . /etc/profile
-[ -f ~/.profile ] && . ~/.profile
-[ -f ~/.bash_profile ] && . ~/.bash_profile
-xsetroot -cursor_name left_ptr
-[ -z "$1" ] && set -- "'${default_exec}'"
-$@
 FILES=$(ls -A /run/media/$USER/)
 for f in $FILES; do umount /run/media/$USER/$f; done
 [ -x /bin/loginctl ] && loginctl terminate-session $XDG_SESSION_ID' > /usr/share/slim/Xsession
 chmod +x /usr/share/slim/Xsession
-echo "
+if grep -q "slim.pid" /etc/slim.conf.original ; then # test indicates likely later 1.4 version
+	echo "
+Theme welcome messages will be modified to display the name
+of the default session at login. To revert this change,
+restore them from the /usr/share/slim/themes.pretweak
+directory to /usr/share/slim/themes. To modify newly added
+SLiM themes, run slim-tweak again.
+"
+	mkdir -p /usr/share/slim/themes.pretweak
+	if [ ! -z "$(ls -A /usr/share/slim/themes.pretweak)" ]; then
+		for themedir in /usr/share/slim/themes.pretweak/*/; do
+			theme_name="$(basename -- $themedir)"
+			if [ ! -d "/usr/share/slim/themes/$theme_name" ]; then  # theme was uninstalled?
+				rm -R $themedir
+			else
+				rm -R "/usr/share/slim/themes/$theme_name"
+				cp -R $themedir /usr/share/slim/themes/
+			fi
+		done
+	fi
+	for themedir in /usr/share/slim/themes/*/; do
+		theme_name="$(basename -- $themedir)"
+		if [ ! -d "/usr/share/slim/themes.pretweak/$theme_name" ]; then  # theme not previously altered by slim-tweak
+			cp -R $themedir /usr/share/slim/themes.pretweak/
+		fi
+		cd $themedir
+		if [ -f "slim.theme" ]; then
+			sed -i '0,/^$/{s/^$/# Welcome parameters added or modified by slim-tweak\n/}' slim.theme
+			rm 2>/dev/null /tmp/theme.welcome
+			sed -i '/welcome_msg/d' slim.theme
+			sed -i 's/#welcome_/welcome_/' slim.theme
+			sed -i '/welcome_font/d' slim.theme # Uses existing welcome elements, but not font
+			if ! grep -q 'welcome_x' slim.theme ; then  # No welcome, so use username font, etc.
+				grep 'username_' slim.theme | sed 's/username_/welcome_/' >> /tmp/theme.welcome 
+				sed -i '/welcome_msg/d' /tmp/theme.welcome
+				sed -i '/welcome_x/d' /tmp/theme.welcome
+				sed -i '/welcome_y/d' /tmp/theme.welcome 
+				echo "
+# welcome message (slim-tweak modified)
+welcome_x              	10%
+welcome_y              	100%" >> slim.theme
+
+			else
+				grep 'username_font' slim.theme | sed 's/username_font/welcome_font/' > /tmp/theme.welcome
+			fi
+			cat /tmp/theme.welcome >> slim.theme
+			echo "welcome_msg			Default: "$default_name"  (F1 chooser)" >> slim.theme
+			echo "Slim-tweak README
+
+This theme's slim.theme file welcome message parameters were modified by slim-tweak. The original theme is stored in
+ \"/usr/share/slim/themes.pretweak/\" directory." > README.theme-tweak
+		fi
+	done
+fi
+echo "\"$default_name\" will be first listed (default) xsession.
+
 slim-tweak was successfully run.
 You may need to restart the slim service or reboot to enable changes"
