@@ -170,7 +170,7 @@ else
 	$@
 fi
 FILES=$(ls -A /run/media/$USER/)
-for f in $FILES; do umount /run/media/$USER/$f; done
+for f in $FILES; do umount -l /run/media/$USER/$f; done
 [ -x /bin/loginctl ] && loginctl terminate-session $XDG_SESSION_ID' > /usr/share/slim/Xsession
 chmod +x /usr/share/slim/Xsession
 if grep -q "slim.pid" /etc/slim.conf.original ; then # test indicates likely later 1.4 version
